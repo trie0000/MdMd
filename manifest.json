@@ -1,0 +1,32 @@
+{
+  "name": "MdMd",
+  "short_name": "MdMd",
+  "description": "Local markdown editor — fully offline, no network access.",
+  "lang": "ja",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#0098ff",
+  "background_color": "#fafaf7",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "file_handlers": [
+    {
+      "action": "./index.html",
+      "accept": {
+        "text/markdown": [".md", ".markdown"],
+        "text/plain":    [".txt"]
+      },
+      "icons": [
+        { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }
+      ],
+      "launch_type": "multiple-clients"
+    }
+  ],
+  "launch_handler": {
+    "client_mode": ["navigate-new", "auto"]
+  }
+}

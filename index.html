@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<title>MdMd</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0098ff">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+
+<!-- All assets are local (vendor/). No external network calls. -->
+<link rel="stylesheet" href="vendor/fonts/fonts.css">
+<link rel="stylesheet" href="vendor/codemirror/codemirror.min.css">
+<link rel="stylesheet" href="vendor/codemirror/theme/dracula.min.css">
+<link rel="stylesheet" href="vendor/highlight/default.min.css">
+<link rel="stylesheet" href="styles.css">
+
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script src="vendor/codemirror/codemirror.min.js"></script>
+<script src="vendor/codemirror/addon/overlay.min.js"></script>
+<script src="vendor/codemirror/mode/xml.min.js"></script>
+<script src="vendor/codemirror/mode/javascript.min.js"></script>
+<script src="vendor/codemirror/mode/css.min.js"></script>
+<script src="vendor/codemirror/mode/markdown.min.js"></script>
+<script src="vendor/codemirror/mode/gfm.min.js"></script>
+<script src="vendor/codemirror/addon/continuelist.min.js"></script>
+<script src="vendor/markdown-it.min.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="vendor/highlight/highlight.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="app.js"></script>
+<script>
+  // Register service worker for offline-first PWA behavior.
+  // Skipped on file:// (SW only works on http(s)/localhost).
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(err => {
+        console.warn('[mdeditor] SW registration failed:', err);
+      });
+    });
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# Old archive snapshot.
+mdeditor.zip
+
+# Internal design assets not part of the distributed app.
+design_handoff_mdeditor/
+
+# Claude Code workspace.
+.claude/
+
+# OS / editor cruft.
+.DS_Store
+Thumbs.db
+*.swp
+*~
