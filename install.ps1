@@ -51,20 +51,24 @@ catch {
 
 $url = "http://127.0.0.1:$Port/index.html"
 Write-Host "MdMd installer running at $url"
-Write-Host "1) Edge will open shortly."
-Write-Host "2) Click the install icon in the address bar -> Install."
+Write-Host "1) Edge will open shortly in a normal tab."
+Write-Host "2) Look at the right end of the address bar for the"
+Write-Host "   install icon (a small monitor with a downward arrow)"
+Write-Host "   and click it -> 'Install'."
 Write-Host "3) Tick 'open .md, .markdown, .txt with this app' when prompted."
 Write-Host "4) Close this console window when finished."
 Write-Host ""
 
-# ── Launch Edge (--app for a clean window; falls back to default browser) ─────
+# ── Launch Edge as a regular browser tab ──────────────────────────────────────
+# Note: do NOT use --app= here. App-window mode hides the address bar, which
+# also hides the install icon — the user would have no way to install.
 $edge = @(
   "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
   "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
 ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 
 if ($edge) {
-  Start-Process -FilePath $edge -ArgumentList @("--app=$url")
+  Start-Process -FilePath $edge -ArgumentList @($url)
 } else {
   Start-Process $url
 }
