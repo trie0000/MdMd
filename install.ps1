@@ -9,7 +9,12 @@
 # Network: binds 127.0.0.1 only (never the LAN). Zero outbound traffic.
 
 param(
-  [int]$Port = 0   # 0 = auto-pick a free port
+  # MdMd is registered as a PWA at http://127.0.0.1:<Port>/. The port is
+  # part of the PWA's identity in Edge, so it MUST stay stable across
+  # reinstalls — otherwise Edge treats each fresh install as a new app
+  # and you end up with duplicate entries in edge://apps. Keep this port
+  # constant across all machines and across update runs.
+  [int]$Port = 17645
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,12 +24,22 @@ if (-not (Test-Path -LiteralPath (Join-Path $root 'index.html'))) {
   exit 1
 }
 
-# ── Pick a free localhost port ────────────────────────────────────────────────
-function Get-FreePort {
-  $l = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
-  $l.Start(); $p = $l.LocalEndpoint.Port; $l.Stop(); return $p
+# ── Port conflict guard ───────────────────────────────────────────────────────
+# If another process is already on the chosen port, abort with a clear
+# message instead of silently falling back to a random port (which would
+# create a duplicate PWA install).
+$inUse = $false
+try {
+  $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
+  $probe.Start(); $probe.Stop()
+} catch { $inUse = $true }
+if ($inUse) {
+  Write-Host "Port $Port is already in use." -ForegroundColor Red
+  Write-Host "  - If MdMd's installer/updater is already running, close that window first."
+  Write-Host "  - If another app uses port $Port, free it or override with: install.cmd -Port <num>"
+  Write-Host "    (Use the same -Port value every time to avoid duplicate PWA registration.)"
+  exit 1
 }
-if ($Port -le 0) { $Port = Get-FreePort }
 
 # ── MIME map (small whitelist; everything else falls back to octet-stream) ────
 $mime = @{

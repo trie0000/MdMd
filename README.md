@@ -167,13 +167,60 @@ For larger deployments via SCCM / Intune / Group Policy:
 
 ### F. Updating an installed copy
 
-1. Replace the folder contents with the new version.
-2. Bump `CACHE_VERSION` in `sw.js` (already done if you pulled a
-   release).
-3. Re-run `install.cmd`. Edge picks up the new service worker and
-   refreshes the cached assets.
-4. If a major change happened, users can uninstall via
-   `edge://apps` → MdMd → Uninstall, then re-run `install.cmd`.
+The installer always serves on the **fixed port `17645`**. That port is
+part of the PWA's identity in Edge — keeping it constant means the
+service worker can find its origin again and pull new assets without
+creating a duplicate entry in `edge://apps`.
+
+Update flow:
+
+1. Replace the folder contents with the new version
+   (`git pull` if cloned, or extract a new ZIP over the old folder).
+2. The new copy already has `CACHE_VERSION` bumped in `sw.js`.
+3. Run `install.cmd`.
+4. When Edge opens the installer tab, **also open MdMd from
+   `edge://apps` or the Start menu** (any existing MdMd window works).
+   This is what gives the running PWA a chance to talk to its origin
+   and pull the new service worker.
+5. In the PWA, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> to
+   force a reload. The new SW activates and serves the new assets.
+6. Close the `install.cmd` console window. Done.
+
+You do **not** need to uninstall / reinstall for normal updates —
+files change in place under the same origin.
+
+#### Migrating from a pre-fixed-port build
+
+Versions before commit `<this commit>` ran the installer on a random
+port, so each install registered a *new* PWA in Edge. If you have one
+or more "duplicate" MdMd entries in `edge://apps`:
+
+1. Open `edge://apps`.
+2. **Uninstall every MdMd entry** there.
+3. Run the new `install.cmd`. Only one entry will exist from now on.
+
+#### Forcing a full reinstall
+
+For a major release or when the SW seems stuck:
+
+1. `edge://apps` → MdMd → **Uninstall**.
+2. Run `install.cmd` → install fresh.
+3. Re-confirm `.md` / `.markdown` / `.txt` file associations when Edge
+   asks.
+
+#### Overriding the port
+
+If `17645` clashes with another tool on your machine, pass a different
+port — but use the **same value every time** to keep PWA identity
+stable:
+
+```cmd
+install.cmd -Port 18000
+```
+
+Changing the port after install ≡ a fresh install (Edge sees a new
+origin), so you'll need to uninstall the old entry from `edge://apps`
+first.
 
 ## Updating (for developers)
 
