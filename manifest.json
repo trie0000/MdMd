@@ -17,8 +17,7 @@
     {
       "action": "./index.html",
       "accept": {
-        "text/markdown": [".md", ".markdown"],
-        "text/plain":    [".txt"]
+        "text/markdown": [".md", ".markdown"]
       },
       "icons": [
         { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }

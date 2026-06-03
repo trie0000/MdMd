@@ -70,7 +70,7 @@ Write-Host "1) Edge will open shortly in a normal tab."
 Write-Host "2) Look at the right end of the address bar for the"
 Write-Host "   install icon (a small monitor with a downward arrow)"
 Write-Host "   and click it -> 'Install'."
-Write-Host "3) Tick 'open .md, .markdown, .txt with this app' when prompted."
+Write-Host "3) Tick 'open .md, .markdown with this app' when prompted."
 Write-Host "4) Close this console window when finished."
 Write-Host ""
 
