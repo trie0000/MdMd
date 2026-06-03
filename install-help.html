@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>MdMd を .md の既定アプリにする — トラブルシューティング</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #fafaf7;
+    --fg: #1a1a1a;
+    --muted: #666;
+    --accent: #0098ff;
+    --card: #ffffff;
+    --border: #e5e5e0;
+    --code-bg: #f1efea;
+    --warn-bg: #fff8d6;
+    --warn-border: #e6d875;
+    --ok-bg: #e5f6e5;
+    --ok-border: #88c488;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e; --fg: #eaeaea; --muted: #999; --card: #2a2a2a;
+      --border: #3a3a3a; --code-bg: #333; --warn-bg: #3a3525; --warn-border: #7a6a3a;
+      --ok-bg: #25372a; --ok-border: #4a7a55;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 20px; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+    line-height: 1.65; font-size: 15px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 8px; }
+  h2 {
+    font-size: 19px; margin: 36px 0 12px; padding-bottom: 6px;
+    border-bottom: 2px solid var(--accent); display: inline-block;
+  }
+  h3 { font-size: 16px; margin: 20px 0 8px; }
+  .lead { color: var(--muted); margin: 0 0 28px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 18px 22px; margin: 16px 0;
+  }
+  .warn { background: var(--warn-bg); border-color: var(--warn-border); }
+  .ok   { background: var(--ok-bg);   border-color: var(--ok-border); }
+  .badge {
+    display: inline-block; font-size: 12px; font-weight: 700;
+    background: var(--accent); color: #fff; padding: 2px 8px; border-radius: 999px;
+    vertical-align: middle; margin-right: 6px;
+  }
+  ol, ul { padding-left: 22px; }
+  ol li, ul li { margin: 6px 0; }
+  ol li::marker { color: var(--accent); font-weight: 700; }
+  code, kbd {
+    background: var(--code-bg); padding: 1px 6px; border-radius: 4px;
+    font-family: "JetBrains Mono", "Consolas", "SF Mono", monospace; font-size: 0.92em;
+  }
+  kbd { border: 1px solid var(--border); }
+  .path { color: var(--accent); font-weight: 600; }
+  .step-num {
+    display: inline-block; width: 22px; height: 22px; line-height: 22px;
+    background: var(--accent); color: #fff; border-radius: 50%; text-align: center;
+    font-size: 12px; font-weight: 700; margin-right: 6px;
+  }
+  details { margin: 10px 0; }
+  summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+  .quick-nav {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 28px;
+  }
+  .quick-nav a {
+    text-decoration: none; padding: 6px 12px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 999px; color: var(--fg); font-size: 13px;
+  }
+  .quick-nav a:hover { border-color: var(--accent); color: var(--accent); }
+  .diagram {
+    font-family: "JetBrains Mono", "Consolas", monospace; font-size: 12px;
+    background: var(--code-bg); padding: 14px; border-radius: 6px;
+    white-space: pre; overflow-x: auto; line-height: 1.4;
+  }
+  footer { margin-top: 50px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>MdMd を <code>.md</code> の既定アプリにする</h1>
+<p class="lead">
+  <code>.md</code> がすでに別のアプリ(メモ帳 / Typora / VS Code など)に
+  紐づけられている場合、Edge は自動関連付けダイアログを出さないことがあります。
+  そのときは下記いずれかの方法で MdMd に切り替えてください。
+</p>
+
+<div class="quick-nav">
+  <a href="#a">A. Edge から再登録</a>
+  <a href="#b">B. エクスプローラーから</a>
+  <a href="#c">C. Windows 設定から</a>
+  <a href="#troubleshoot">うまく行かないとき</a>
+</div>
+
+<div class="card warn">
+  <strong>前提:</strong>
+  <code>install.cmd</code> から PWA インストール(Edge 上で「インストール」ボタン)
+  まで済んでいること。<code>edge://apps</code> に MdMd が並んでいれば OK。
+</div>
+
+<h2 id="a">A. Edge から関連付けダイアログを再表示</h2>
+<p>一番ラクなルート。Edge 自身に「もう一度関連付けを聞き直して」と指示する方法です。</p>
+<ol>
+  <li>Edge のアドレスバーに <code>edge://apps</code> を入力</li>
+  <li>一覧から <strong>MdMd</strong> をクリック</li>
+  <li>「<strong>アプリの詳細</strong>」を開く</li>
+  <li>
+    「<strong>サポートされている種類のファイルでこのアプリを使用するか確認する</strong>」
+    というトグルを <em>オフ → オン</em> に切り替える
+  </li>
+  <li>切り替えた瞬間、Edge が確認バナーを出してきます → <strong>[許可]</strong> を押す</li>
+</ol>
+<div class="card ok"><strong>これで関連付け完了。</strong> 任意の <code>.md</code> をダブルクリックして MdMd が起動すれば OK。</div>
+
+<h2 id="b">B. エクスプローラーから手動関連付け</h2>
+<p>方法 A でダイアログが出ない、または既定アプリだけ強制的に書き換えたい場合。</p>
+<ol>
+  <li>エクスプローラーで任意の <code>.md</code> ファイルを <strong>右クリック</strong></li>
+  <li><strong>「プログラムから開く」 → 「別のアプリを選択」</strong></li>
+  <li>
+    リストから <strong>MdMd</strong> を選ぶ
+    <details>
+      <summary>リストに MdMd が出ない場合</summary>
+      <ul>
+        <li>「<strong>PC でアプリを選択する</strong>」 / 「<strong>常にこのアプリで開く</strong>」を一旦タップせず、
+          そのままダイアログ下部の「<strong>その他のアプリ</strong>」を展開</li>
+        <li>それでも無ければ Edge を一度終了して、エクスプローラーを再起動してから再試行</li>
+        <li>最終手段は <a href="#c">方法 C</a></li>
+      </ul>
+    </details>
+  </li>
+  <li>
+    下部の「<strong>常にこのアプリを使って <code>.md</code> ファイルを開く</strong>」に
+    チェック → <strong>[OK]</strong>
+  </li>
+  <li><code>.markdown</code> も同様に関連付け(<code>.txt</code> は要否で判断)</li>
+</ol>
+
+<h2 id="c">C. Windows 設定 → 既定のアプリ</h2>
+<p>方法 A・B が両方ダメなときの確実ルート。</p>
+<ol>
+  <li><kbd>Win</kbd> + <kbd>I</kbd> で「設定」を開く</li>
+  <li><strong>アプリ</strong> → <strong>既定のアプリ</strong></li>
+  <li>検索ボックスに <strong>MdMd</strong> と入力して選択</li>
+  <li>関連付け一覧に <code>.md</code> <code>.markdown</code> <code>.txt</code> が並ぶので、
+    既定値ボタンを押して MdMd を選ぶ</li>
+</ol>
+<details>
+  <summary>逆引きルート: 拡張子から既定アプリを設定したい</summary>
+  <ol>
+    <li>設定 → アプリ → 既定のアプリ → <strong>「ファイルの種類で既定値を選択する」</strong></li>
+    <li>一覧を下にスクロールして <code>.md</code> を探す</li>
+    <li>右の現在の既定アプリをクリック → MdMd を選ぶ</li>
+  </ol>
+</details>
+
+<h2 id="troubleshoot">うまく行かないときのチェックリスト</h2>
+
+<h3>① MdMd がアプリ一覧に出ない</h3>
+<ul>
+  <li>PWA インストールが失敗している可能性 → <code>install.cmd</code> を再実行 →
+    Edge で「インストール」 → <code>edge://apps</code> に並ぶか確認</li>
+  <li>Edge を完全終了(タスクトレイの常駐含む)してから再起動 → 再試行</li>
+</ul>
+
+<h3>② ダブルクリックしても何も起きない / 別アプリが開く</h3>
+<ul>
+  <li>関連付け側ではなく、<strong>ファイルの「開く方法」のロック</strong>が残っている可能性。
+    方法 B でチェックボックスを付けて再設定</li>
+  <li>VS Code 等が <code>.md</code> をシェル統合経由で予約していると、Windows の
+    関連付けより優先されることがある。該当アプリの設定で
+    「<code>.md</code> をこのアプリで開く」を外す</li>
+</ul>
+
+<h3>③ Edge のダイアログが「自動的に非表示」と出る</h3>
+<ul>
+  <li>「<strong>今後表示しない</strong>」を以前押した可能性。方法 A の
+    アプリ詳細トグルから復活させる</li>
+</ul>
+
+<h3>④ 組織の管理 PC で「既定アプリの変更が無効」</h3>
+<p>グループポリシーで関連付けが固定されているケース。
+このときは IT 部門に「<code>.md</code> を MdMd PWA に関連付けたい」と相談するしかない。
+PWA 単体の起動・編集・保存は依然として動作するので、
+ダブルクリック以外(D&D / <code>Ctrl+O</code>)経由で運用する手もあります。</p>
+
+<h3>⑤ 関連付けを完全リセットしてやり直したい</h3>
+<div class="diagram">設定 → アプリ → 既定のアプリ
+  → ページ下部の「リセット」ボタン
+  → すべての既定値が初期化される
+  → install.cmd 経由でやり直す</div>
+
+<h2>動作確認</h2>
+<ol>
+  <li>任意の <code>.md</code> をダブルクリック</li>
+  <li>MdMd の単独ウィンドウが開く</li>
+  <li>その .md がタブとして自動で読み込まれる</li>
+  <li>編集 → <kbd>Ctrl</kbd> + <kbd>S</kbd> → 元の .md が上書きされる</li>
+</ol>
+<div class="card ok">
+  全部通れば file_handlers + launchQueue + File System Access API が
+  正しく機能している証拠です。以後ネット完全切断状態でも動作します。
+</div>
+
+<footer>
+  MdMd — offline PWA markdown editor /
+  <a href="https://github.com/trie0000/MdMd">github.com/trie0000/MdMd</a>
+</footer>
+
+</div>
+</body>
+</html>
