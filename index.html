@@ -43,6 +43,18 @@
       });
     });
   }
+  // Tell install.ps1 to shut down its loopback HTTP server the moment Edge
+  // finishes installing the PWA. The PowerShell side polls for this exact
+  // path and exits the listener on receipt, which lets install.cmd close
+  // the console window without the user pressing anything.
+  // sendBeacon is the right tool here — it survives a tab close that the
+  // browser may trigger as part of the install flow.
+  window.addEventListener('appinstalled', () => {
+    try {
+      if (navigator.sendBeacon) navigator.sendBeacon('/installed');
+      else fetch('/installed', { method: 'POST', keepalive: true }).catch(() => {});
+    } catch (_) {}
+  });
 </script>
 </body>
 </html>

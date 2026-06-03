@@ -71,7 +71,8 @@ Write-Host "2) Look at the right end of the address bar for the"
 Write-Host "   install icon (a small monitor with a downward arrow)"
 Write-Host "   and click it -> 'Install'."
 Write-Host "3) Tick 'open .md, .markdown with this app' when prompted."
-Write-Host "4) Close this console window when finished."
+Write-Host "4) This window will close automatically once the install completes."
+Write-Host "   If anything goes wrong, you can close it manually (Ctrl+C)."
 Write-Host ""
 
 # ── Launch Edge as a regular browser tab ──────────────────────────────────────
@@ -88,11 +89,24 @@ if ($edge) {
   Start-Process $url
 }
 
-# ── Serve files until Ctrl+C or window close ──────────────────────────────────
-while ($listener.IsListening) {
+# ── Serve files until /installed beacon arrives (or user closes window) ──────
+$installed = $false
+while ($listener.IsListening -and -not $installed) {
   try { $ctx = $listener.GetContext() } catch { break }
   try {
     $reqPath = [System.Uri]::UnescapeDataString($ctx.Request.Url.AbsolutePath)
+
+    # Install-complete beacon from index.html (window 'appinstalled' event).
+    # We ACK and break out of the listener loop so the script can exit.
+    if ($reqPath -eq '/installed') {
+      $ctx.Response.StatusCode = 204
+      $ctx.Response.Close()
+      Write-Host ""
+      Write-Host "Install detected. Shutting down installer." -ForegroundColor Green
+      $installed = $true
+      break
+    }
+
     if ($reqPath -eq '/' -or $reqPath -eq '') { $reqPath = '/index.html' }
     $rel = $reqPath.TrimStart('/').Replace('/', [System.IO.Path]::DirectorySeparatorChar)
     $abs = [System.IO.Path]::GetFullPath((Join-Path $root $rel))
@@ -121,3 +135,6 @@ while ($listener.IsListening) {
     try { $ctx.Response.StatusCode = 500; $ctx.Response.Close() } catch { }
   }
 }
+
+try { $listener.Stop(); $listener.Close() } catch { }
+exit 0
