@@ -172,6 +172,29 @@ a { color: inherit; }
 .tb-kbd { font-family: var(--font-mono); font-size: 10px; color: rgba(255,255,255,.7); }
 .tb-div { width: 1px; height: 18px; background: var(--border-strong); margin: 0 4px; }
 
+/* View-mode segmented control */
+.tb-segmented {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  height: 26px;
+}
+.tb-seg {
+  width: 30px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.tb-seg + .tb-seg { border-left: 1px solid var(--border-strong); }
+.tb-seg:hover { background: rgba(127,127,127,.12); color: var(--fg); }
+.tb-seg.active { background: var(--accent); color: white; }
+
 /* ── Tabbar ────────────────────────────────────────────────────────────────── */
 .tabbar {
   display: flex;
