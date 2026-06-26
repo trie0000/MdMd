@@ -227,19 +227,49 @@ install.cmd -Port 18000
 
 ## 開発者向け: アップデート手順
 
+ビルドのソースは [`app.src.js`](app.src.js) です(esbuild が prettify した
+`React.createElement` 形式)。`app.js` はこれを minify した出力なので、
+**手で `app.js` を編集しないこと**。
+
 vendor 配下のライブラリを差し替えるとき:
 
 1. `vendor/` 配下に新バージョンを上書きダウンロード
-2. `app.js`(コンパイル済 JSX)を変更した場合は JSX を編集し、
-   esbuild で再ビルド:
+2. ロジックを変えたい場合は `app.src.js` を編集して再ビルド:
 
    ```bash
-   npx esbuild app.jsx --minify --target=es2020 --outfile=app.js
+   npx esbuild app.src.js --minify --target=es2020 --outfile=app.js
    ```
 
 3. **`sw.js` の `CACHE_VERSION` を bump** すること。これを忘れると
    古い Service Worker が古いアセットを返し続けます
 4. PWA を再インストール(または Edge の SW ページで「更新」をクリック)
+
+## 自動保存(クラッシュ復旧)
+
+タブの内容・タイトル・dirty フラグは編集のたびに 500ms 遅延で
+`localStorage` に保存され、ページ非表示・離脱・PC 強制終了が起きても
+復旧できます:
+
+| 保存先 | 保存内容 |
+|---|---|
+| `localStorage` (`mdmd-session`) | タブ一覧(本文 / 名前 / dirty / 元パス) + アクティブタブ id |
+| `IndexedDB` (`mdmd` / `h`) | `FileSystemFileHandle` — 復元後も `Ctrl+S` が元ファイルに直接書ける |
+
+復旧のしくみ:
+
+1. 起動時、`localStorage` にセッションがあればサンプルではなくそれを復元
+2. その直後に IndexedDB からファイルハンドルを非同期で読み込み、
+   タブ id が一致するものを再アタッチ
+3. ファイルハンドルの権限が失効しているケース(ファイル削除・移動など)では
+   `Ctrl+S` が自然に「名前を付けて保存」へフォールバック
+
+セッションを意図的にクリアしたいとき(まっさらな状態から始めたい等):
+
+```js
+// 開発者ツールのコンソールで
+__mdmd_clearSession();
+location.reload();
+```
 
 ## 制限事項
 

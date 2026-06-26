@@ -1,0 +1,605 @@
+// ── Autosave helpers (added after compile recovery) ──────────────────────────
+// Session restore strategy:
+//   1. Tab metadata + body text -> localStorage (synchronous, simple)
+//   2. FileSystemFileHandles (not JSON-serializable) -> IndexedDB
+//   3. On mount: tabs initialize from localStorage if present, then an async
+//      effect re-attaches any handles whose IDB record matches by tab id.
+// If permissions on the handle expired (rare), the next Ctrl+S will fall
+// through to saveFileAs so the user never silently loses content.
+const __MDMD_KEY = "mdmd-session", __MDMD_DB = "mdmd", __MDMD_STORE = "h";
+let __mdmd_cached;
+function __mdmd_load() {
+  if (__mdmd_cached !== undefined) return __mdmd_cached;
+  try {
+    const raw = localStorage.getItem(__MDMD_KEY);
+    if (!raw) { __mdmd_cached = null; return null; }
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.tabs) || data.tabs.length === 0) { __mdmd_cached = null; return null; }
+    __mdmd_cached = data; return data;
+  } catch { __mdmd_cached = null; return null; }
+}
+function __mdmd_save(tabs, activeId) {
+  try {
+    const lite = tabs.map(t => ({
+      id: t.id, name: t.name, path: t.path,
+      content: t.content, savedContent: t.savedContent, dirty: t.dirty,
+      hadHandle: !!t.handle,
+    }));
+    localStorage.setItem(__MDMD_KEY, JSON.stringify({ tabs: lite, activeId }));
+  } catch (e) { console.warn("[mdmd] session save failed:", e); }
+}
+function __mdmd_clear() { try { localStorage.removeItem(__MDMD_KEY); __mdmd_cached = null; } catch {} }
+function __mdmd_openDB() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) { reject(new Error("no idb")); return; }
+    const req = indexedDB.open(__MDMD_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(__MDMD_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function __mdmd_saveHandles(tabs) {
+  try {
+    const db = await __mdmd_openDB();
+    const tx = db.transaction(__MDMD_STORE, "readwrite");
+    const store = tx.objectStore(__MDMD_STORE);
+    store.clear();
+    for (const t of tabs) if (t.handle) store.put(t.handle, t.id);
+    await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+  } catch {}
+}
+async function __mdmd_loadHandles() {
+  try {
+    const db = await __mdmd_openDB();
+    return await new Promise(resolve => {
+      const out = {};
+      const tx = db.transaction(__MDMD_STORE, "readonly");
+      const req = tx.objectStore(__MDMD_STORE).openCursor();
+      req.onsuccess = e => {
+        const c = e.target.result;
+        if (c) { out[c.key] = c.value; c.continue(); } else resolve(out);
+      };
+      req.onerror = () => resolve({});
+    });
+  } catch { return {}; }
+}
+window.__mdmd_clearSession = () => { __mdmd_clear(); __mdmd_saveHandles([]); };
+
+const { useState, useEffect, useRef, useCallback, useMemo } = React, Ico = ({ d: r, size: n = 14, sw: o = 1.6, fill: i = "none" }) => React.createElement("svg", { viewBox: "0 0 24 24", width: n, height: n, fill: i, stroke: "currentColor", strokeWidth: o, strokeLinecap: "round", strokeLinejoin: "round", style: { flex: "0 0 auto", display: "inline-block" } }, r), Icons = { FilePlus: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }), React.createElement("path", { d: "M14 2v6h6" }), React.createElement("path", { d: "M12 12v6" }), React.createElement("path", { d: "M9 15h6" })) }), FolderOpen: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1" }), React.createElement("path", { d: "M3 9h18l-2 9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" })) }), Save: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" }), React.createElement("path", { d: "M17 21v-8H7v8" }), React.createElement("path", { d: "M7 3v5h8" })) }), SaveAs: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" }), React.createElement("path", { d: "M7 3v5h8" }), React.createElement("path", { d: "M14 17l2 2 4-4" })) }), X: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M6 6l12 12" }), React.createElement("path", { d: "M18 6L6 18" })) }), Plus: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M12 5v14" }), React.createElement("path", { d: "M5 12h14" })) }), List: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M8 6h13" }), React.createElement("path", { d: "M8 12h13" }), React.createElement("path", { d: "M8 18h13" }), React.createElement("path", { d: "M3 6h.01" }), React.createElement("path", { d: "M3 12h.01" }), React.createElement("path", { d: "M3 18h.01" })) }), Sun: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("circle", { cx: "12", cy: "12", r: "4" }), React.createElement("path", { d: "M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" })) }), Moon: React.createElement(Ico, { d: React.createElement("path", { d: "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" }) }), Upload: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }), React.createElement("path", { d: "M17 8l-5-5-5 5" }), React.createElement("path", { d: "M12 3v12" })), size: 36, sw: 1.4 }), Pin: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M12 17v5" }), React.createElement("path", { d: "M9 10.76V6l-2-2h10l-2 2v4.76l3 3.24H6z" })) }), Settings: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("circle", { cx: "12", cy: "12", r: "3" }), React.createElement("path", { d: "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" })) }), PanelLeft: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("rect", { x: "3", y: "3", width: "18", height: "18", rx: "2" }), React.createElement("line", { x1: "9", y1: "3", x2: "9", y2: "21" })) }), PanelRight: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("rect", { x: "3", y: "3", width: "18", height: "18", rx: "2" }), React.createElement("line", { x1: "15", y1: "3", x2: "15", y2: "21" })) }), Columns: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("rect", { x: "3", y: "3", width: "18", height: "18", rx: "2" }), React.createElement("line", { x1: "12", y1: "3", x2: "12", y2: "21" })) }) };
+window.Icons = Icons;
+function Menubar({ onOpenSettings: r }) {
+  const [n, o] = React.useState(null), i = { File: [{ label: "\u65B0\u898F", kbd: "Ctrl+N", action: () => window.__app?.newTab() }, { label: "\u958B\u304F", kbd: "Ctrl+O", action: () => window.__app?.openFile() }, null, { label: "\u4FDD\u5B58", kbd: "Ctrl+S", action: () => window.__app?.saveFile() }, { label: "\u5225\u540D\u3067\u4FDD\u5B58", kbd: "Ctrl+Shift+S", action: () => window.__app?.saveFileAs() }, null, { label: "\u9589\u3058\u308B", kbd: "Ctrl+W", action: () => window.__app?.closeActiveTab() }], Edit: [{ label: "\u5143\u306B\u623B\u3059", kbd: "Ctrl+Z", action: null }, { label: "\u3084\u308A\u76F4\u3057", kbd: "Ctrl+Y", action: null }], View: [{ label: "\u30A8\u30C7\u30A3\u30BF\u306E\u307F", kbd: "Ctrl+1", action: () => window.__app?.setViewMode("editor") }, { label: "\u30D7\u30EC\u30D3\u30E5\u30FC\u306E\u307F", kbd: "Ctrl+2", action: () => window.__app?.setViewMode("preview") }, { label: "\u4E21\u65B9\u8868\u793A", kbd: "Ctrl+3", action: () => window.__app?.setViewMode("both") }, null, { label: "\u76EE\u6B21\u3092\u8868\u793A/\u975E\u8868\u793A", kbd: "", action: () => window.__app?.toggleToc() }, { label: "\u30C6\u30FC\u30DE\u5207\u66FF", kbd: "", action: () => window.__app?.toggleTheme() }], Help: [{ label: "\u30AD\u30FC\u30DC\u30FC\u30C9\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8", kbd: "", action: null }] }, s = () => o(null);
+  return useEffect(() => {
+    if (n) {
+      const l = () => s();
+      return window.addEventListener("click", l), () => window.removeEventListener("click", l);
+    }
+  }, [n]), React.createElement("div", { className: "menubar" }, React.createElement("div", { className: "app-title" }, React.createElement("span", { className: "app-dot" }, "M"), React.createElement("span", { style: { color: "var(--fg-muted)", fontWeight: 600, fontSize: 11, letterSpacing: "0.02em" } }, "MdMd")), Object.entries(i).map(([l, c]) => React.createElement("div", { key: l, style: { position: "relative" } }, React.createElement("div", { className: "menu-item" + (n === l ? " active" : ""), onClick: (u) => {
+    u.stopPropagation(), o(n === l ? null : l);
+  } }, l), n === l && React.createElement("div", { className: "menu-dropdown", onClick: (u) => u.stopPropagation() }, c.map((u, p) => u === null ? React.createElement("div", { key: p, className: "menu-sep" }) : React.createElement("div", { key: p, className: "menu-dd-item" + (u.action ? "" : " disabled"), onClick: () => {
+    u.action?.(), s();
+  } }, React.createElement("span", null, u.label), u.kbd && React.createElement("span", { className: "menu-kbd" }, u.kbd)))))), React.createElement("div", { className: "menu-spacer" }), React.createElement("div", { className: "menu-item", style: { color: "var(--fg-faint)", fontSize: 11 } }, "MdMd"));
+}
+window.Menubar = Menubar;
+function Toolbar({ onNew: r, onOpen: n, onSave: o, onSaveAs: i, onToggleToc: s, onToggleTheme: l, onOpenSettings: c, onViewMode: u, tocVisible: p, dark: f, viewMode: m }) {
+  return React.createElement("div", { className: "toolbar" }, React.createElement("button", { className: "tb-btn", onClick: r, title: "\u65B0\u898F (Ctrl+N)" }, Icons.FilePlus, React.createElement("span", null, "\u65B0\u898F")), React.createElement("button", { className: "tb-btn", onClick: n, title: "\u958B\u304F (Ctrl+O)" }, Icons.FolderOpen, React.createElement("span", null, "\u958B\u304F")), React.createElement("div", { className: "tb-div" }), React.createElement("button", { className: "tb-btn primary", onClick: o, title: "\u4FDD\u5B58 (Ctrl+S)" }, Icons.Save, React.createElement("span", null, "\u4FDD\u5B58"), React.createElement("span", { className: "tb-kbd" }, "\u2303S")), React.createElement("button", { className: "tb-btn", onClick: i, title: "\u5225\u540D\u3067\u4FDD\u5B58 (Ctrl+Shift+S)" }, Icons.SaveAs, React.createElement("span", null, "\u5225\u540D\u3067\u4FDD\u5B58")), React.createElement("div", { className: "tb-div" }), React.createElement("div", { className: "tb-segmented", role: "group", "aria-label": "\u8868\u793A\u30E2\u30FC\u30C9" }, React.createElement("button", { className: "tb-seg" + (m === "editor" ? " active" : ""), onClick: () => u("editor"), title: "\u30A8\u30C7\u30A3\u30BF\u306E\u307F (Ctrl+1)" }, Icons.PanelLeft), React.createElement("button", { className: "tb-seg" + (m === "both" ? " active" : ""), onClick: () => u("both"), title: "\u4E21\u65B9\u8868\u793A (Ctrl+3)" }, Icons.Columns), React.createElement("button", { className: "tb-seg" + (m === "preview" ? " active" : ""), onClick: () => u("preview"), title: "\u30D7\u30EC\u30D3\u30E5\u30FC\u306E\u307F (Ctrl+2)" }, Icons.PanelRight)), React.createElement("div", { className: "tb-div" }), React.createElement("button", { className: "tb-btn icon-only" + (p ? " active" : ""), onClick: s, title: p ? "\u76EE\u6B21\u3092\u96A0\u3059" : "\u76EE\u6B21\u3092\u8868\u793A" }, Icons.List), React.createElement("button", { className: "tb-btn icon-only", onClick: l, title: "\u30C6\u30FC\u30DE\u5207\u66FF" }, f ? Icons.Sun : Icons.Moon), React.createElement("button", { className: "tb-btn icon-only", onClick: c, title: "\u8A2D\u5B9A" }, Icons.Settings), React.createElement("div", { style: { flex: 1 } }), React.createElement("span", { style: { fontSize: 11, color: "var(--fg-faint)", paddingRight: 4 } }, "Markdown \xB7 UTF-8"));
+}
+window.Toolbar = Toolbar;
+function Tabbar({ tabs: r, activeId: n, onActivate: o, onClose: i, onNew: s }) {
+  return React.createElement("div", { className: "tabbar" }, r.map((l) => React.createElement("div", { key: l.id, className: "tab" + (l.id === n ? " active" : "") + (l.dirty ? " dirty" : ""), onClick: () => o(l.id), title: l.path }, React.createElement("span", { className: "tab-badge" }, "md"), React.createElement("span", { className: "tab-name" }, l.name), React.createElement("span", { className: "tab-dirty-dot" }), React.createElement("span", { className: "tab-close", onClick: (c) => {
+    c.stopPropagation(), i(l.id);
+  }, title: "\u9589\u3058\u308B" }, Icons.X))), React.createElement("button", { className: "tab-add", onClick: s, title: "\u65B0\u3057\u3044\u30BF\u30D6" }, Icons.Plus), React.createElement("div", { className: "tab-spacer" }));
+}
+window.Tabbar = Tabbar;
+function TOC({ headings: r, activeId: n, onJump: o, onClose: i }) {
+  return React.createElement("aside", { className: "toc" }, React.createElement("div", { className: "toc-head" }, React.createElement("span", null, "OUTLINE"), React.createElement("span", { style: { flex: 1 } }), React.createElement("button", { title: "\u9589\u3058\u308B", onClick: i }, Icons.X)), React.createElement("ul", { className: "toc-list" }, r.map((s) => React.createElement("li", { key: s.id }, React.createElement("a", { href: "#" + s.id, className: "h" + s.level + (s.id === n ? " active" : ""), onClick: (l) => {
+    l.preventDefault(), o(s.id);
+  } }, s.text)))));
+}
+window.TOC = TOC;
+function DropZone({ show: r }) {
+  return React.createElement("div", { className: "drop-zone" + (r ? " show" : "") }, Icons.Upload, React.createElement("div", { style: { fontWeight: 600 } }, "\u3053\u3053\u306B .md \u30D5\u30A1\u30A4\u30EB\u3092\u30C9\u30ED\u30C3\u30D7"), React.createElement("div", { style: { fontSize: 11, fontWeight: 400, opacity: 0.8 } }, "\u8907\u6570\u30D5\u30A1\u30A4\u30EB\u53EF \xB7 \u30BF\u30D6\u3067\u958B\u304D\u307E\u3059"));
+}
+window.DropZone = DropZone;
+function Statusbar({ tab: r, cursor: n, stats: o, dark: i }) {
+  return React.createElement("div", { className: "statusbar" }, React.createElement("span", { className: "sb-item" }, React.createElement("span", { className: "sb-dot", style: { opacity: r?.dirty ? 1 : 0.5 } }), r?.dirty ? "\u672A\u4FDD\u5B58\u306E\u5909\u66F4" : "\u4FDD\u5B58\u6E08\u307F"), React.createElement("span", { className: "sb-item", style: { opacity: 0.7 } }, r?.path || "\u2014"), React.createElement("span", { style: { flex: 1 } }), React.createElement("span", { className: "sb-item" }, "\u884C ", n.line, ", \u5217 ", n.col), React.createElement("span", { className: "sb-item" }, o.lines, " \u884C"), React.createElement("span", { className: "sb-item" }, o.words, " \u8A9E"), React.createElement("span", { className: "sb-item" }, o.chars, " \u6587\u5B57"), React.createElement("span", { className: "sb-item" }, "UTF-8"), React.createElement("span", { className: "sb-item" }, "LF"), React.createElement("span", { className: "sb-item" }, "Markdown"), React.createElement("span", { className: "sb-item" }, i ? "Dark" : "Light"));
+}
+window.Statusbar = Statusbar;
+function SettingsPanel({ visible: r, onClose: n, fontSize: o, onFontSize: i, editorFont: s, onEditorFont: l, accent: c, onAccent: u, dark: p, onDark: f }) {
+  return r ? React.createElement("div", { className: "settings-overlay", onClick: n }, React.createElement("div", { className: "settings-panel", onClick: (m) => m.stopPropagation() }, React.createElement("div", { className: "settings-head" }, React.createElement("span", null, "\u8A2D\u5B9A"), React.createElement("button", { onClick: n }, Icons.X)), React.createElement("div", { className: "settings-body" }, React.createElement("div", { className: "settings-row" }, React.createElement("label", null, "\u30D5\u30A9\u30F3\u30C8\u30B5\u30A4\u30BA"), React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } }, React.createElement("input", { type: "range", min: 11, max: 22, value: o, onChange: (m) => i(+m.target.value), style: { flex: 1 } }), React.createElement("span", { style: { fontSize: 11, color: "var(--fg-faint)", minWidth: 28 } }, o, "px"))), React.createElement("div", { className: "settings-row" }, React.createElement("label", null, "\u30A8\u30C7\u30A3\u30BF\u30D5\u30A9\u30F3\u30C8"), React.createElement("div", { style: { display: "flex", gap: 6 } }, ["mono", "sans"].map((m) => React.createElement("button", { key: m, className: "seg-btn" + (s === m ? " active" : ""), onClick: () => l(m) }, m)))), React.createElement("div", { className: "settings-row" }, React.createElement("label", null, "\u30A2\u30AF\u30BB\u30F3\u30C8\u30AB\u30E9\u30FC"), React.createElement("input", { type: "color", value: c, onChange: (m) => u(m.target.value), style: { width: 56, height: 26, padding: 2, border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", background: "transparent" } })), React.createElement("div", { className: "settings-row" }, React.createElement("label", null, "\u30C0\u30FC\u30AF\u30E2\u30FC\u30C9"), React.createElement("button", { className: "toggle-btn" + (p ? " on" : ""), onClick: () => f(!p) }, React.createElement("i", null)))))) : null;
+}
+window.SettingsPanel = SettingsPanel;
+function CMEditor({ tabId: r, content: n, dark: o, onChange: i, onScroll: s, onCursorChange: l, cmRef: c }) {
+  const u = useRef(null), p = useRef(null), f = useRef(false), m = useRef(s), S = useRef(i), C = useRef(l);
+  return useEffect(() => {
+    m.current = s;
+  }, [s]), useEffect(() => {
+    S.current = i;
+  }, [i]), useEffect(() => {
+    C.current = l;
+  }, [l]), useEffect(() => {
+    if (!u.current) return;
+    const y = CodeMirror(u.current, { value: n, mode: { name: "gfm", highlightFormatting: true }, lineNumbers: true, lineWrapping: true, theme: o ? "dracula" : "mdmd-light", indentUnit: 2, tabSize: 2, viewportMargin: 1 / 0, extraKeys: { Enter: "newlineAndIndentContinueMarkdownList", Tab: (g) => g.somethingSelected() ? g.execCommand("indentMore") : g.execCommand("insertSoftTab"), "Shift-Tab": (g) => g.execCommand("indentLess") } });
+    return p.current = y, c && (c.current = y), y.on("change", () => {
+      f.current || S.current(y.getValue());
+    }), y.on("scroll", () => m.current(y)), y.on("cursorActivity", () => {
+      const g = y.getCursor();
+      C.current({ line: g.line + 1, col: g.ch + 1 });
+    }), () => {
+      c && (c.current = null), p.current = null, u.current && (u.current.innerHTML = "");
+    };
+  }, []), useEffect(() => {
+    p.current?.setOption("theme", o ? "dracula" : "mdmd-light");
+  }, [o]), useEffect(() => {
+    if (!p.current) return;
+    p.current.getValue() !== n && (f.current = true, p.current.setValue(n), f.current = false);
+  }, [n]), React.createElement("div", { ref: u, style: { height: "100%" } });
+}
+window.CMEditor = CMEditor;
+function uid() {
+  return Math.random().toString(36).slice(2, 9);
+}
+function slugify(r) {
+  return r.replace(/[*_`\[\]()]/g, "").toLowerCase().trim().replace(/[^\w\s぀-鿿-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-") || "section";
+}
+function extractHeadings(r) {
+  const n = {};
+  return r.split(`
+`).map((o) => {
+    const i = o.match(/^(#{1,6})\s+(.+)/);
+    if (!i) return null;
+    const s = i[1].length, l = i[2].replace(/[*_`\[\]]/g, "").replace(/\([^)]*\)/g, "").trim();
+    let c = slugify(l);
+    return n[c] !== void 0 ? (n[c]++, c += "-" + n[c]) : n[c] = 0, { id: c, level: s, text: l };
+  }).filter(Boolean);
+}
+const mdRenderer = window.markdownit({ html: false, linkify: true, typographer: true, highlight(r, n) {
+  if (n && hljs.getLanguage(n)) try {
+    return '<pre class="hljs"><code>' + hljs.highlight(r, { language: n, ignoreIllegals: true }).value + "</code></pre>";
+  } catch {
+  }
+  return '<pre class="hljs"><code>' + mdRenderer.utils.escapeHtml(r) + "</code></pre>";
+} }), _headOpen = mdRenderer.renderer.rules.heading_open || ((r, n, o, i, s) => s.renderToken(r, n, o));
+mdRenderer.renderer.rules.heading_open = (r, n, o, i, s) => {
+  const l = r[n], c = r[n + 1];
+  return c?.type === "inline" && l.attrSet("id", slugify(c.content)), _headOpen(r, n, o, i, s);
+};
+const _linkOpen = mdRenderer.renderer.rules.link_open || ((r, n, o, i, s) => s.renderToken(r, n, o));
+mdRenderer.renderer.rules.link_open = (r, n, o, i, s) => (r[n].attrSet("target", "_blank"), r[n].attrSet("rel", "noopener noreferrer"), _linkOpen(r, n, o, i, s));
+function renderMarkdown(r) {
+  let n = mdRenderer.render(r);
+  return n = n.replace(/<li>\s*\[ \]\s*/g, '<li class="task-list-item"><input type="checkbox" disabled> ').replace(/<li>\s*\[x\]\s*/gi, '<li class="task-list-item"><input type="checkbox" checked disabled> '), DOMPurify.sanitize(n, { USE_PROFILES: { html: true }, ADD_ATTR: ["target", "rel"] });
+}
+function buildScrollMap(r, n, o) {
+  const i = [0], s = [0], l = r.getValue().split(`
+`), c = n.getBoundingClientRect();
+  let u = 0;
+  for (let f = 0; f < l.length && u < o.length; f++) {
+    if (!l[f].match(/^#{1,6}\s/)) continue;
+    const m = o[u++];
+    i.push(r.heightAtLine(f, "local"));
+    const S = n.querySelector("#" + m.id);
+    if (S) {
+      const C = S.getBoundingClientRect();
+      s.push(n.scrollTop + C.top - c.top);
+    } else s.push(s[s.length - 1]);
+  }
+  const p = r.getScrollInfo();
+  return i.push(Math.max(0, p.height - p.clientHeight)), s.push(Math.max(0, n.scrollHeight - n.clientHeight)), { editorTops: i, previewTops: s };
+}
+function interpolate(r, n, o) {
+  if (o <= r[0]) return n[0];
+  const i = r.length - 1;
+  if (o >= r[i]) return n[i];
+  for (let s = 0; s < i; s++) if (o <= r[s + 1]) {
+    const l = r[s + 1] - r[s];
+    return l === 0 ? n[s] : n[s] + (o - r[s]) / l * (n[s + 1] - n[s]);
+  }
+  return n[i];
+}
+const SAMPLE_README = `# MdMd
+
+> Edge / Chrome \u3067\u52D5\u4F5C\u3059\u308B\u3001\u8EFD\u91CF\u306A\u30ED\u30FC\u30AB\u30EB Markdown \u30A8\u30C7\u30A3\u30BF\u3002
+
+\`\`\`
+MdMd = \u307E\u3069\u307E\u3069 = \u7A93 \xD7 \u7A93 = Editor \xD7 Preview
+\`\`\`
+
+MdMd \u306F\u30D6\u30E9\u30A6\u30B6\u3067\u5B8C\u7D50\u3059\u308BMarkdown\u30A8\u30C7\u30A3\u30BF\u3067\u3059\u3002\u30D5\u30A1\u30A4\u30EB\u306FFile System Access API\u3092\u4F7F\u3063\u3066\u30ED\u30FC\u30AB\u30EB\u30C7\u30A3\u30B9\u30AF\u304B\u3089\u76F4\u63A5\u958B\u304D\u30FB\u4FDD\u5B58\u3057\u307E\u3059\u3002\u30B5\u30FC\u30D0\u30FC\u4E0D\u8981\u3001\u30B5\u30A4\u30F3\u30A4\u30F3\u4E0D\u8981\u3002
+
+## \u6A5F\u80FD
+
+- **\u30E9\u30A4\u30D6\u5206\u5272\u30D7\u30EC\u30D3\u30E5\u30FC** \u2014 \u5DE6\u3067\u7DE8\u96C6\u3001\u53F3\u3067\u30EA\u30A2\u30EB\u30BF\u30A4\u30E0\u30EC\u30F3\u30C0\u30EA\u30F3\u30B0
+- **\u30BF\u30D6\u3067\u30D5\u30A1\u30A4\u30EB\u7BA1\u7406** \u2014 \u8907\u6570\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u3092\u540C\u6642\u306B\u7DE8\u96C6
+- **\u81EA\u52D5\u76EE\u6B21 (TOC)** \u2014 \u30BB\u30AF\u30B7\u30E7\u30F3\u4E00\u89A7\u304C\u53F3\u4E0A\u306B\u5E38\u99D0
+- **\u30B9\u30AF\u30ED\u30FC\u30EB\u540C\u671F** \u2014 \u30A8\u30C7\u30A3\u30BF\u3068\u30D7\u30EC\u30D3\u30E5\u30FC\u304C\u9023\u52D5
+- **\u30C9\u30E9\u30C3\u30B0&\u30C9\u30ED\u30C3\u30D7** \u3067\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u304F
+- **Ctrl+S** \u3067\u4E0A\u66F8\u304D\u4FDD\u5B58 / **Ctrl+Shift+S** \u3067\u5225\u540D\u4FDD\u5B58
+- **\u30E9\u30A4\u30C8/\u30C0\u30FC\u30AF\u30C6\u30FC\u30DE**
+
+## \u30AF\u30A4\u30C3\u30AF\u30B9\u30BF\u30FC\u30C8
+
+\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u304F\u65B9\u6CD5:
+
+1. \`.md\` \u30D5\u30A1\u30A4\u30EB\u3092\u30A6\u30A3\u30F3\u30C9\u30A6\u306B\u30C9\u30E9\u30C3\u30B0&\u30C9\u30ED\u30C3\u30D7
+2. \u30C4\u30FC\u30EB\u30D0\u30FC\u306E **\u958B\u304F** \u30DC\u30BF\u30F3\u3092\u30AF\u30EA\u30C3\u30AF
+3. <kbd>Ctrl</kbd> + <kbd>O</kbd> \u3092\u62BC\u3059
+
+## \u30AD\u30FC\u30DC\u30FC\u30C9\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8
+
+| \u64CD\u4F5C | \u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8 |
+|---|---|
+| \u65B0\u898F\u30D5\u30A1\u30A4\u30EB | \`Ctrl + N\` |
+| \u30D5\u30A1\u30A4\u30EB\u3092\u958B\u304F | \`Ctrl + O\` |
+| \u4FDD\u5B58 | \`Ctrl + S\` |
+| \u5225\u540D\u3067\u4FDD\u5B58 | \`Ctrl + Shift + S\` |
+| \u30BF\u30D6\u3092\u9589\u3058\u308B | \`Ctrl + W\` |
+| \u6B21\u306E\u30BF\u30D6 | \`Ctrl + Tab\` |
+| \u30C6\u30FC\u30DE\u5207\u66FF | \u30C4\u30FC\u30EB\u30D0\u30FC\u306E \u2600/\u{1F319} \u30DC\u30BF\u30F3 |
+
+## \u30B3\u30FC\u30C9\u4F8B
+
+\`\`\`javascript
+// \u30B9\u30AF\u30ED\u30FC\u30EB\u540C\u671F (\u6BD4\u7387\u30D9\u30FC\u30B9)
+function syncScroll(source, target) {
+  const ratio = source.scrollTop /
+    Math.max(1, source.scrollHeight - source.clientHeight);
+  target.scrollTop =
+    ratio * (target.scrollHeight - target.clientHeight);
+}
+\`\`\`
+
+## \u30ED\u30FC\u30C9\u30DE\u30C3\u30D7
+
+- [x] \u30E9\u30A4\u30D6\u30D7\u30EC\u30D3\u30E5\u30FC
+- [x] \u30BF\u30D6\u7BA1\u7406
+- [x] \u30B9\u30AF\u30ED\u30FC\u30EB\u540C\u671F
+- [x] TOC\u30D1\u30CD\u30EB
+- [x] \u30C9\u30E9\u30C3\u30B0&\u30C9\u30ED\u30C3\u30D7
+- [ ] Vim\u30AD\u30FC\u30D0\u30A4\u30F3\u30C9
+- [ ] Mermaid\u30C0\u30A4\u30A2\u30B0\u30E9\u30E0
+- [ ] \u6700\u8FD1\u958B\u3044\u305F\u30D5\u30A1\u30A4\u30EB
+
+## \u30A2\u30FC\u30AD\u30C6\u30AF\u30C1\u30E3
+
+> \u30B7\u30F3\u30D7\u30EB\u3055\u3092\u6700\u512A\u5148\u3002\u30D3\u30EB\u30C9\u30B9\u30C6\u30C3\u30D7\u306A\u3057\u3001\u30B5\u30FC\u30D0\u30FC\u306A\u3057\u3002
+
+\u30EC\u30F3\u30C0\u30EA\u30F3\u30B0\u30D1\u30A4\u30D7\u30E9\u30A4\u30F3:
+
+\`\`\`
+source.md \u2192 markdown-it \u2192 DOMPurify \u2192 innerHTML
+\`\`\`
+
+### \u30A8\u30C7\u30A3\u30BF
+
+CodeMirror 5 + GFM\u30E2\u30FC\u30C9\u3002\u30B7\u30F3\u30BF\u30C3\u30AF\u30B9\u30CF\u30A4\u30E9\u30A4\u30C8\u4ED8\u304D\u3002
+
+### \u30B9\u30C8\u30EC\u30FC\u30B8
+
+\u30D5\u30A1\u30A4\u30EB\u306F\u3042\u306A\u305F\u306E\u30C7\u30A3\u30B9\u30AF\u306B\u5B58\u5728\u3057\u307E\u3059\u3002File System Access API\u3067\u30CF\u30F3\u30C9\u30EB\u3092\u4FDD\u6301\u3057\u3001\`Ctrl+S\` \u3067\u76F4\u63A5\u4E0A\u66F8\u304D\u3057\u307E\u3059\u3002
+
+## \u30E9\u30A4\u30BB\u30F3\u30B9
+
+MIT
+`, SAMPLE_NOTES = `# \u30DF\u30FC\u30C6\u30A3\u30F3\u30B0\u30E1\u30E2 \u2014 Q3\u8A08\u753B
+
+**\u65E5\u4ED8:** 2026-04-25
+**\u53C2\u52A0\u8005:** \u7530\u4E2D\u3001\u4F50\u85E4\u3001\u5C71\u7530
+
+## \u30A2\u30B8\u30A7\u30F3\u30C0
+
+1. Q2\u30EC\u30D3\u30E5\u30FC
+2. Q3\u512A\u5148\u4E8B\u9805
+3. \u30EA\u30BD\u30FC\u30B9\u914D\u5206
+
+## \u6C7A\u5B9A\u4E8B\u9805
+
+- \u30A8\u30C7\u30A3\u30BF v1 \u3092 **6\u6708** \u307E\u3067\u306B\u30EA\u30EA\u30FC\u30B9
+- \u30D7\u30E9\u30B0\u30A4\u30F3\u30B7\u30B9\u30C6\u30E0\u306F Q4 \u306B\u5EF6\u671F
+- \u6765\u30B9\u30D7\u30EA\u30F3\u30C8\u304B\u3089\u793E\u5185\u3067\u30C9\u30C3\u30B0\u30D5\u30FC\u30C7\u30A3\u30F3\u30B0\u958B\u59CB
+
+## \u30A2\u30AF\u30B7\u30E7\u30F3\u30A2\u30A4\u30C6\u30E0
+
+- [ ] *\u7530\u4E2D* \u2014 v1 \u30ED\u30FC\u30F3\u30C1\u30C1\u30A7\u30C3\u30AF\u30EA\u30B9\u30C8\u306E\u4F5C\u6210
+- [ ] *\u4F50\u85E4* \u2014 \u8A2D\u5B9A\u30D1\u30CD\u30EB\u306E\u30C7\u30B6\u30A4\u30F3\u30C1\u30B1\u30C3\u30C8\u767B\u9332
+- [x] *\u5C71\u7530* \u2014 Inter + JetBrains Mono \u306E\u7D44\u307F\u5408\u308F\u305B\u78BA\u8A8D
+
+> \u30EA\u30DE\u30A4\u30F3\u30C0\u30FC: PR\u306E\u8AAC\u660E\u306FMarkdown\u3067\u66F8\u304F\u3053\u3068\u3002
+
+## \u30B3\u30FC\u30C9\u30B9\u30CB\u30DA\u30C3\u30C8
+
+\`\`\`typescript
+type Tab = {
+  id: string;
+  name: string;
+  path: string;
+  content: string;
+  savedContent: string;
+  dirty: boolean;
+  handle: FileSystemFileHandle | null;
+};
+\`\`\`
+`, SAMPLE_TODO = `# TODO
+
+## \u4ECA\u9031
+
+- [x] \u30EC\u30A4\u30A2\u30A6\u30C8\u5B9F\u88C5
+- [x] \u30BF\u30D6\u7BA1\u7406
+- [x] TOC\u30D1\u30CD\u30EB
+- [ ] \u30B9\u30AF\u30ED\u30FC\u30EB\u540C\u671F\u306E\u6539\u5584
+- [ ] \u6700\u8FD1\u958B\u3044\u305F\u30D5\u30A1\u30A4\u30EB
+
+## \u6B21\u9031
+
+- [ ] \u691C\u7D22\u30FB\u7F6E\u63DB
+- [ ] Vim\u30E2\u30FC\u30C9
+- [ ] Mermaid\u30B5\u30DD\u30FC\u30C8
+
+## \u30D0\u30C3\u30AF\u30ED\u30B0
+
+- [ ] PWA\u5316
+- [ ] \u30AA\u30D5\u30E9\u30A4\u30F3\u5BFE\u5FDC
+- [ ] \u30B9\u30D7\u30EA\u30C3\u30C8\u30B5\u30A4\u30BA\u4FDD\u5B58
+`, INITIAL_TABS = [{ id: "f1", name: "README.md", path: "~/projects/MdMd/README.md", content: SAMPLE_README, savedContent: SAMPLE_README, dirty: false, handle: null }, { id: "f2", name: "meeting.md", path: "~/notes/meeting.md", content: SAMPLE_NOTES, savedContent: SAMPLE_NOTES, dirty: false, handle: null }, { id: "f3", name: "TODO.md", path: "~/notes/TODO.md", content: SAMPLE_TODO, savedContent: SAMPLE_TODO, dirty: false, handle: null }];
+function App() {
+  const [r, n] = useState(() => { const s = __mdmd_load(); return s ? s.tabs.map(t => ({ ...t, handle: null })) : INITIAL_TABS; }), [o, i] = useState(() => { const s = __mdmd_load(); return s ? (s.tabs.find(t => t.id === s.activeId)?.id || s.tabs[0].id) : INITIAL_TABS[0].id; }), [s, l] = useState(true), [c, u] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false), [p, f] = useState(() => {
+    try {
+      const e = localStorage.getItem("mdmd-view-mode");
+      return e === "editor" || e === "preview" ? e : "both";
+    } catch {
+      return "both";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("mdmd-view-mode", p);
+    } catch {
+    }
+    requestAnimationFrame(() => T.current?.refresh());
+  }, [p]);
+  const [m, S] = useState(14), [C, y] = useState("mono"), [g, j] = useState(() => {
+    try {
+      return localStorage.getItem("mdmd-accent") || "#6c8db5";
+    } catch {
+      return "#6c8db5";
+    }
+  }), [q, Q] = useState({ line: 1, col: 1 }), [X, V] = useState(false), [$, z] = useState(""), [Z, U] = useState(false), [O, G] = useState(""), [F, J] = useState(0.5), I = useRef(null), T = useRef(null), W = useRef(null), b = useMemo(() => r.find((e) => e.id === o) || r[0], [r, o]);
+  useEffect(() => {
+    const e = setTimeout(() => G(b?.content || ""), 150);
+    return () => clearTimeout(e);
+  }, [b?.content]);
+  const M = useMemo(() => extractHeadings(O), [O]), Y = useMemo(() => renderMarkdown(O), [O]), ee = useMemo(() => {
+    const e = b?.content || "";
+    return { lines: e.split(`
+`).length, words: e.trim() ? e.trim().split(/\s+/).length : 0, chars: e.length };
+  }, [b?.content]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = c ? "dark" : "light";
+  }, [c]), useEffect(() => {
+    document.documentElement.style.setProperty("--accent", g), document.documentElement.style.setProperty("--accent-hover", g + "cc");
+    const e = document.querySelector('meta[name="theme-color"]');
+    e && e.setAttribute("content", g);
+    try {
+      localStorage.setItem("mdmd-accent", g);
+    } catch {
+    }
+  }, [g]), useEffect(() => {
+    document.documentElement.style.setProperty("--editor-fs", m + "px"), document.documentElement.style.setProperty("--preview-fs", m + 1 + "px"), T.current?.refresh();
+  }, [m]), useEffect(() => {
+    document.documentElement.style.setProperty("--font-editor", C === "sans" ? "var(--font-ui)" : "var(--font-mono)"), T.current?.refresh();
+  }, [C]);
+  const L = useCallback((e, t) => n((a) => a.map((d) => d.id === e ? { ...d, ...t } : d)), []), E = useCallback(() => {
+    const e = uid();
+    n((t) => [...t, { id: e, name: "Untitled.md", path: "(\u672A\u4FDD\u5B58)", content: `# Untitled
+
+`, savedContent: "", dirty: true, handle: null }]), i(e);
+  }, []), P = useCallback(() => {
+    n((e) => {
+      const t = e.find((d) => d.id === o);
+      if (!t || t.dirty && !confirm(`"${t.name}" \u306B\u672A\u4FDD\u5B58\u306E\u5909\u66F4\u304C\u3042\u308A\u307E\u3059\u3002\u9589\u3058\u307E\u3059\u304B\uFF1F`)) return e;
+      const a = e.filter((d) => d.id !== t.id);
+      return a.length === 0 ? e : (i(a[0].id), a);
+    });
+  }, [o]), te = useCallback((e) => {
+    n((t) => {
+      const a = t.find((h) => h.id === e);
+      if (!a || a.dirty && !confirm(`"${a.name}" \u306B\u672A\u4FDD\u5B58\u306E\u5909\u66F4\u304C\u3042\u308A\u307E\u3059\u3002\u9589\u3058\u307E\u3059\u304B\uFF1F`)) return t;
+      const d = t.filter((h) => h.id !== e);
+      return d.length === 0 ? t : (e === o && i(d[0].id), d);
+    });
+  }, [o]), N = useCallback((e) => {
+    const t = uid();
+    n((a) => [...a, { id: t, dirty: false, handle: null, ...e, savedContent: e.content }]), i(t);
+  }, []), _ = useCallback(async () => {
+    if (!window.showOpenFilePicker) {
+      const e = document.createElement("input");
+      e.type = "file", e.accept = ".md,.markdown", e.multiple = true, e.onchange = async (t) => {
+        for (const a of Array.from(t.target.files)) N({ name: a.name, path: a.name, content: await a.text(), handle: null });
+      }, e.click();
+      return;
+    }
+    try {
+      const e = await showOpenFilePicker({ types: [{ description: "Markdown", accept: { "text/markdown": [".md", ".markdown"] } }], multiple: true });
+      for (const t of e) {
+        const a = await t.getFile();
+        N({ name: a.name, path: t.name, content: await a.text(), handle: t });
+      }
+    } catch (e) {
+      e.name !== "AbortError" && console.error(e);
+    }
+  }, [N]), D = useCallback(async (e) => {
+    if (e = e || b, !!e) {
+      if (!e.handle) {
+        await A(e);
+        return;
+      }
+      try {
+        await e.handle.queryPermission({ mode: "readwrite" }) !== "granted" && await e.handle.requestPermission({ mode: "readwrite" });
+        const a = await e.handle.createWritable();
+        await a.write(e.content), await a.close(), L(e.id, { dirty: false, savedContent: e.content });
+      } catch (t) {
+        console.error(t);
+      }
+    }
+  }, [b, L]), A = useCallback(async (e) => {
+    if (e = e || b, !!e) {
+      if (!window.showSaveFilePicker) {
+        const t = document.createElement("a");
+        t.href = URL.createObjectURL(new Blob([e.content], { type: "text/markdown" })), t.download = e.name, t.click();
+        return;
+      }
+      try {
+        const t = await showSaveFilePicker({ suggestedName: e.name, types: [{ description: "Markdown", accept: { "text/markdown": [".md", ".markdown"] } }] }), a = await t.createWritable();
+        await a.write(e.content), await a.close(), L(e.id, { handle: t, name: t.name, path: t.name, dirty: false, savedContent: e.content });
+      } catch (t) {
+        t.name !== "AbortError" && console.error(t);
+      }
+    }
+  }, [b, L]), H = useCallback((e) => {
+    const t = e.querySelectorAll("[id]");
+    let a = "";
+    t.forEach((d) => {
+      d.offsetTop - e.scrollTop < 80 && (a = d.id);
+    }), z(a);
+  }, []), R = useRef({ editor: 0, preview: 0 }), B = 120, ne = useCallback((e) => {
+    if (performance.now() - R.current.editor < B) return;
+    const t = I.current;
+    if (!t) return;
+    const a = buildScrollMap(e, t, M), d = interpolate(a.editorTops, a.previewTops, e.getScrollInfo().top);
+    H(t), Math.abs(t.scrollTop - d) > 0.5 && (R.current.preview = performance.now(), t.scrollTop = d);
+  }, [H, M]), ae = useCallback(() => {
+    if (performance.now() - R.current.preview < B) return;
+    const e = I.current, t = T.current;
+    if (!e || !t) return;
+    const a = buildScrollMap(t, e, M), d = interpolate(a.previewTops, a.editorTops, e.scrollTop);
+    H(e);
+    const h = t.getScrollInfo();
+    Math.abs(h.top - d) > 0.5 && (R.current.editor = performance.now(), t.scrollTo(null, d));
+  }, [H, M]), re = useCallback((e) => {
+    const t = I.current, a = T.current, d = M.findIndex((h) => h.id === e);
+    if (d !== -1) {
+      if (t) {
+        const h = t.querySelector("#" + e);
+        if (h) {
+          const v = Math.max(0, h.offsetTop - 16);
+          Math.abs(t.scrollTop - v) > 0.5 && (R.current.preview = performance.now(), t.scrollTop = v);
+        }
+      }
+      if (a) {
+        const h = a.getValue().split(`
+`);
+        let v = 0;
+        for (let k = 0; k < h.length; k++) if (h[k].match(/^#{1,6}\s/)) {
+          if (v === d) {
+            const x = Math.max(0, a.heightAtLine(k, "local") - 16), w = a.getScrollInfo();
+            Math.abs(w.top - x) > 0.5 && (R.current.editor = performance.now(), a.scrollTo(null, x));
+            break;
+          }
+          v++;
+        }
+      }
+      z(e);
+    }
+  }, [M]), oe = useCallback((e) => {
+    e.preventDefault();
+    const t = e.clientX, a = W.current?.getBoundingClientRect();
+    if (!a) return;
+    const d = F;
+    document.body.style.cursor = "col-resize", document.body.style.userSelect = "none";
+    const h = (k) => {
+      const x = k.clientX - t, w = Math.max(0.15, Math.min(0.85, d + x / a.width));
+      J(w);
+    }, v = () => {
+      document.body.style.cursor = "", document.body.style.userSelect = "", window.removeEventListener("mousemove", h), window.removeEventListener("mouseup", v);
+    };
+    window.addEventListener("mousemove", h), window.addEventListener("mouseup", v);
+  }, [F]);
+  return useEffect(() => {
+    let e = 0;
+    const t = (v) => {
+      v.preventDefault(), ++e > 0 && V(true);
+    }, a = (v) => {
+      v.preventDefault(), --e <= 0 && (e = 0, V(false));
+    }, d = (v) => v.preventDefault(), h = async (v) => {
+      v.preventDefault(), e = 0, V(false);
+      const k = Array.from(v.dataTransfer.files).filter((w) => /\.(md|markdown)$/i.test(w.name)), x = Array.from(v.dataTransfer.items || []);
+      for (let w = 0; w < k.length; w++) {
+        const se = await k[w].text();
+        let K = null;
+        if (x[w]?.getAsFileSystemHandle) try {
+          K = await x[w].getAsFileSystemHandle();
+        } catch {
+        }
+        N({ name: k[w].name, path: k[w].name, content: se, handle: K });
+      }
+    };
+    return window.addEventListener("dragenter", t), window.addEventListener("dragleave", a), window.addEventListener("dragover", d), window.addEventListener("drop", h), () => {
+      window.removeEventListener("dragenter", t), window.removeEventListener("dragleave", a), window.removeEventListener("dragover", d), window.removeEventListener("drop", h);
+    };
+  }, [N]), useEffect(() => {
+    "launchQueue" in window && window.launchQueue.setConsumer(async (e) => {
+      if (!(!e || !e.files || e.files.length === 0)) for (const t of e.files) try {
+        const a = await t.getFile();
+        N({ name: a.name, path: t.name || a.name, content: await a.text(), handle: t });
+      } catch (a) {
+        console.error("[mdeditor] launchQueue file open failed:", a);
+      }
+    });
+  }, [N]), useEffect(() => {
+    const e = (t) => {
+      const a = t.ctrlKey || t.metaKey;
+      if (a && !t.shiftKey && t.key === "n" && (t.preventDefault(), E()), a && !t.shiftKey && t.key === "o" && (t.preventDefault(), _()), a && !t.shiftKey && t.key === "s" && (t.preventDefault(), D()), a && t.shiftKey && t.key === "S" && (t.preventDefault(), A()), a && !t.shiftKey && t.key === "w" && (t.preventDefault(), P()), a && !t.shiftKey && t.key === "1" && (t.preventDefault(), f("editor")), a && !t.shiftKey && t.key === "2" && (t.preventDefault(), f("preview")), a && !t.shiftKey && t.key === "3" && (t.preventDefault(), f("both")), a && t.key === "Tab") {
+        t.preventDefault();
+        const d = r.findIndex((h) => h.id === o);
+        i(r[(d + 1) % r.length].id);
+      }
+    };
+    return window.addEventListener("keydown", e), () => window.removeEventListener("keydown", e);
+  }, [o, r, E, _, D, A, P]), useEffect(() => {
+    window.__app = { newTab: E, openFile: _, saveFile: D, saveFileAs: A, closeActiveTab: P, toggleToc: () => l((e) => !e), toggleTheme: () => u((e) => !e), setViewMode: f };
+  }, [E, _, D, A, P]), useEffect(() => {
+    const e = (t) => {
+      r.some((a) => a.dirty) && (t.preventDefault(), t.returnValue = "");
+    };
+    return window.addEventListener("beforeunload", e), () => window.removeEventListener("beforeunload", e);
+  }, [r]), useEffect(() => {
+    // Debounced autosave of tabs + activeId. Flushes on visibility-hidden /
+    // pagehide so a crash or sudden close still leaves recoverable content.
+    const flush = () => { __mdmd_save(r, o); __mdmd_saveHandles(r); };
+    const timer = setTimeout(flush, 500);
+    const onHide = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onHide);
+    };
+  }, [r, o]), useEffect(() => {
+    // One-shot: after restoring tabs from localStorage, look in IDB for any
+    // matching FileSystemFileHandles and re-attach so Ctrl+S can keep writing
+    // to the original file across crashes / window reopens.
+    let cancelled = false;
+    __mdmd_loadHandles().then(map => {
+      if (cancelled) return;
+      if (!map || Object.keys(map).length === 0) return;
+      n(prev => prev.map(t => map[t.id] ? { ...t, handle: map[t.id] } : t));
+    });
+    return () => { cancelled = true; };
+  }, []), React.createElement("div", { className: "shell" }, React.createElement(Menubar, null), React.createElement(Toolbar, { onNew: E, onOpen: _, onSave: D, onSaveAs: A, onToggleToc: () => l((e) => !e), onToggleTheme: () => u((e) => !e), onOpenSettings: () => U(true), onViewMode: f, tocVisible: s, dark: c, viewMode: p }), React.createElement(Tabbar, { tabs: r, activeId: o, onActivate: i, onClose: te, onNew: E }), React.createElement("div", { className: "split view-" + p, ref: W, style: { gridTemplateColumns: p === "editor" || p === "preview" ? "1fr" : `${F}fr 5px ${1 - F}fr` } }, React.createElement("div", { className: "pane", style: p === "preview" ? { display: "none" } : void 0 }, React.createElement("div", { className: "pane-head" }, React.createElement("span", { className: "pane-dot" }), "EDITOR", React.createElement("span", { className: "spacer" }), React.createElement("span", { className: "pane-meta" }, b?.path || "")), React.createElement("div", { className: "pane-body editor-body" }, React.createElement(CMEditor, { key: o, tabId: o, content: b?.content || "", dark: c, onChange: (e) => L(o, { content: e, dirty: e !== b?.savedContent }), onScroll: ne, onCursorChange: Q, cmRef: T }), React.createElement(DropZone, { show: X }))), p === "both" && React.createElement("div", { className: "divider", onMouseDown: oe }), p !== "editor" && React.createElement("div", { className: "pane" }, React.createElement("div", { className: "pane-head" }, React.createElement("span", { className: "pane-dot" }), "PREVIEW", React.createElement("span", { className: "spacer" }), React.createElement("span", { className: "pane-meta" }, M.length, " sections")), React.createElement("div", { className: "pane-body", ref: I, onScroll: ae }, React.createElement("div", { className: "preview-body", dangerouslySetInnerHTML: { __html: Y } })), s && M.length > 0 && React.createElement(TOC, { headings: M, activeId: $, onJump: re, onClose: () => l(false) }))), React.createElement(Statusbar, { tab: b, cursor: q, stats: ee, dark: c }), React.createElement(SettingsPanel, { visible: Z, onClose: () => U(false), fontSize: m, onFontSize: S, editorFont: C, onEditorFont: y, accent: g, onAccent: j, dark: c, onDark: u }));
+}
+class ErrorBoundary extends React.Component {
+  constructor(n) {
+    super(n), this.state = { err: null };
+  }
+  static getDerivedStateFromError(n) {
+    return { err: n };
+  }
+  componentDidCatch(n, o) {
+    console.error("[mdeditor]", n, o);
+  }
+  render() {
+    return this.state.err ? React.createElement("div", { style: { padding: "32px", maxWidth: "720px", margin: "40px auto", fontFamily: "system-ui, sans-serif", lineHeight: 1.6 } }, React.createElement("h2", null, "MdMd \u3067\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F"), React.createElement("pre", { style: { background: "#f1efea", padding: "12px", borderRadius: "6px", whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: "12px" } }, String(this.state.err && (this.state.err.stack || this.state.err.message || this.state.err))), React.createElement("button", { onClick: () => this.setState({ err: null }), style: { padding: "8px 14px", marginRight: "8px" } }, "\u518D\u8A66\u884C"), React.createElement("button", { onClick: () => location.reload(), style: { padding: "8px 14px" } }, "\u30EA\u30ED\u30FC\u30C9")) : this.props.children;
+  }
+}
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(ErrorBoundary, null, React.createElement(App)));
