@@ -234,15 +234,33 @@ install.cmd -Port 18000
 vendor 配下のライブラリを差し替えるとき:
 
 1. `vendor/` 配下に新バージョンを上書きダウンロード
-2. ロジックを変えたい場合は `app.src.js` を編集して再ビルド:
+2. ロジックを変えたい場合は `app.src.js` を編集
+3. **`sw.js` の `CACHE_VERSION` を bump** すること(忘れると古い SW が
+   古いアセットを返し続けます)
+4. `./build.sh` を実行(esbuild + git short hash / 日時 / SW バージョンを
+   ビルド時に埋め込む):
 
    ```bash
-   npx esbuild app.src.js --minify --target=es2020 --outfile=app.js
+   ./build.sh
    ```
 
-3. **`sw.js` の `CACHE_VERSION` を bump** すること。これを忘れると
-   古い Service Worker が古いアセットを返し続けます
-4. PWA を再インストール(または Edge の SW ページで「更新」をクリック)
+   ステータスバー右下と Help → 「バージョン情報」に表示される値が
+   この時点で更新されます
+5. PWA を再インストール(または Edge の SW ページで「更新」をクリック)
+
+## バージョン情報を確認したい
+
+3 つの確認経路があります。
+
+| どこから | 何が見える |
+|---|---|
+| **画面右下のステータスバー** | `mdmd-vN · {commit短ハッシュ}`(常時表示・ホバーで詳細) |
+| **Help メニュー → バージョン情報** | バージョン / コミット / ビルド日時 を一覧表示 |
+| **DevTools コンソール** | `window.__MDMD_BUILD` で `{ ver, hash, date }` を取得 |
+
+`build.sh` が `app.src.js` / `styles.css` / `index.html` / `sw.js` / `manifest.json`
+に未コミット差分がある状態でビルドすると、ハッシュに `+dirty` が付くので、
+配布物が「コミット済みの状態と一致しているか」も一目で判別できます。
 
 ## 自動保存(クラッシュ復旧)
 

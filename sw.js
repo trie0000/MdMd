@@ -3,7 +3,7 @@
 // every same-origin request from cache. The PWA must work fully offline.
 // Bump CACHE_VERSION whenever any asset under PRECACHE changes.
 
-const CACHE_VERSION = 'mdmd-v8';
+const CACHE_VERSION = 'mdmd-v9';
 
 const PRECACHE = [
   './',

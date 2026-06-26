@@ -513,6 +513,14 @@ a { color: inherit; }
 }
 .sb-item { display: inline-flex; align-items: center; gap: 5px; opacity: .9; white-space: nowrap; }
 .sb-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.8); }
+.sb-build {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: .6;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.sb-build:hover { opacity: 1; }
 
 /* ── Drop zone ─────────────────────────────────────────────────────────────── */
 .drop-zone {
