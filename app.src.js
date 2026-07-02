@@ -65,6 +65,22 @@ async function __mdmd_loadHandles() {
 }
 window.__mdmd_clearSession = () => { __mdmd_clear(); __mdmd_saveHandles([]); };
 
+// Locate an already-open tab for an incoming file so a re-open focuses the
+// existing tab instead of duplicating it. Prefer File System handle identity
+// (isSameEntry, robust across same-name files in different folders); fall back
+// to filename only when either side has no handle (drag-drop / picker-less).
+async function __mdmd_findOpenTab(tabs, incoming) {
+  for (const t of tabs) {
+    if (t.handle && incoming.handle && typeof t.handle.isSameEntry === "function") {
+      try { if (await t.handle.isSameEntry(incoming.handle)) return t; } catch {}
+    }
+  }
+  for (const t of tabs) {
+    if ((!t.handle || !incoming.handle) && incoming.name && t.name === incoming.name) return t;
+  }
+  return null;
+}
+
 const { useState, useEffect, useRef, useCallback, useMemo } = React, Ico = ({ d: r, size: n = 14, sw: o = 1.6, fill: i = "none" }) => React.createElement("svg", { viewBox: "0 0 24 24", width: n, height: n, fill: i, stroke: "currentColor", strokeWidth: o, strokeLinecap: "round", strokeLinejoin: "round", style: { flex: "0 0 auto", display: "inline-block" } }, r), Icons = { FilePlus: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }), React.createElement("path", { d: "M14 2v6h6" }), React.createElement("path", { d: "M12 12v6" }), React.createElement("path", { d: "M9 15h6" })) }), FolderOpen: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1" }), React.createElement("path", { d: "M3 9h18l-2 9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" })) }), Save: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" }), React.createElement("path", { d: "M17 21v-8H7v8" }), React.createElement("path", { d: "M7 3v5h8" })) }), SaveAs: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" }), React.createElement("path", { d: "M7 3v5h8" }), React.createElement("path", { d: "M14 17l2 2 4-4" })) }), X: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M6 6l12 12" }), React.createElement("path", { d: "M18 6L6 18" })) }), Plus: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M12 5v14" }), React.createElement("path", { d: "M5 12h14" })) }), List: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M8 6h13" }), React.createElement("path", { d: "M8 12h13" }), React.createElement("path", { d: "M8 18h13" }), React.createElement("path", { d: "M3 6h.01" }), React.createElement("path", { d: "M3 12h.01" }), React.createElement("path", { d: "M3 18h.01" })) }), Sun: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("circle", { cx: "12", cy: "12", r: "4" }), React.createElement("path", { d: "M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" })) }), Moon: React.createElement(Ico, { d: React.createElement("path", { d: "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" }) }), Upload: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }), React.createElement("path", { d: "M17 8l-5-5-5 5" }), React.createElement("path", { d: "M12 3v12" })), size: 36, sw: 1.4 }), Pin: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("path", { d: "M12 17v5" }), React.createElement("path", { d: "M9 10.76V6l-2-2h10l-2 2v4.76l3 3.24H6z" })) }), Settings: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("circle", { cx: "12", cy: "12", r: "3" }), React.createElement("path", { d: "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" })) }), PanelLeft: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("rect", { x: "3", y: "3", width: "18", height: "18", rx: "2" }), React.createElement("line", { x1: "9", y1: "3", x2: "9", y2: "21" })) }), PanelRight: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("rect", { x: "3", y: "3", width: "18", height: "18", rx: "2" }), React.createElement("line", { x1: "15", y1: "3", x2: "15", y2: "21" })) }), Columns: React.createElement(Ico, { d: React.createElement(React.Fragment, null, React.createElement("rect", { x: "3", y: "3", width: "18", height: "18", rx: "2" }), React.createElement("line", { x1: "12", y1: "3", x2: "12", y2: "21" })) }) };
 window.Icons = Icons;
 function Menubar({ onOpenSettings: r }) {
@@ -370,7 +386,7 @@ function App() {
     } catch {
       return "#6c8db5";
     }
-  }), [q, Q] = useState({ line: 1, col: 1 }), [X, V] = useState(false), [$, z] = useState(""), [Z, U] = useState(false), [O, G] = useState(""), [F, J] = useState(0.5), I = useRef(null), T = useRef(null), W = useRef(null), b = useMemo(() => r.find((e) => e.id === o) || r[0], [r, o]);
+  }), [q, Q] = useState({ line: 1, col: 1 }), [X, V] = useState(false), [$, z] = useState(""), [Z, U] = useState(false), [O, G] = useState(""), [F, J] = useState(0.5), I = useRef(null), T = useRef(null), W = useRef(null), TB = useRef(null), b = useMemo(() => r.find((e) => e.id === o) || r[0], [r, o]);
   useEffect(() => {
     const e = setTimeout(() => G(b?.content || ""), 150);
     return () => clearTimeout(e);
@@ -417,11 +433,15 @@ function App() {
   }, [o]), N = useCallback((e) => {
     const t = uid();
     n((a) => [...a, { id: t, dirty: false, handle: null, ...e, savedContent: e.content }]), i(t);
-  }, []), _ = useCallback(async () => {
+  }, []), OA = useCallback(async (e) => {
+    const t = await __mdmd_findOpenTab(TB.current || [], e);
+    if (t) { i(t.id); return; }
+    N(e);
+  }, [N]), _ = useCallback(async () => {
     if (!window.showOpenFilePicker) {
       const e = document.createElement("input");
       e.type = "file", e.accept = ".md,.markdown", e.multiple = true, e.onchange = async (t) => {
-        for (const a of Array.from(t.target.files)) N({ name: a.name, path: a.name, content: await a.text(), handle: null });
+        for (const a of Array.from(t.target.files)) await OA({ name: a.name, path: a.name, content: await a.text(), handle: null });
       }, e.click();
       return;
     }
@@ -429,7 +449,7 @@ function App() {
       const e = await showOpenFilePicker({ types: [{ description: "Markdown", accept: { "text/markdown": [".md", ".markdown"] } }], multiple: true });
       for (const t of e) {
         const a = await t.getFile();
-        N({ name: a.name, path: t.name, content: await a.text(), handle: t });
+        await OA({ name: a.name, path: t.name, content: await a.text(), handle: t });
       }
     } catch (e) {
       e.name !== "AbortError" && console.error(e);
@@ -537,7 +557,7 @@ function App() {
           K = await x[w].getAsFileSystemHandle();
         } catch {
         }
-        N({ name: k[w].name, path: k[w].name, content: se, handle: K });
+        await OA({ name: k[w].name, path: k[w].name, content: se, handle: K });
       }
     };
     return window.addEventListener("dragenter", t), window.addEventListener("dragleave", a), window.addEventListener("dragover", d), window.addEventListener("drop", h), () => {
@@ -547,7 +567,7 @@ function App() {
     "launchQueue" in window && window.launchQueue.setConsumer(async (e) => {
       if (!(!e || !e.files || e.files.length === 0)) for (const t of e.files) try {
         const a = await t.getFile();
-        N({ name: a.name, path: t.name || a.name, content: await a.text(), handle: t });
+        await OA({ name: a.name, path: t.name || a.name, content: await a.text(), handle: t });
       } catch (a) {
         console.error("[mdeditor] launchQueue file open failed:", a);
       }
@@ -569,7 +589,7 @@ function App() {
       r.some((a) => a.dirty) && (t.preventDefault(), t.returnValue = "");
     };
     return window.addEventListener("beforeunload", e), () => window.removeEventListener("beforeunload", e);
-  }, [r]), useEffect(() => {
+  }, [r]), useEffect(() => { TB.current = r; }, [r]), useEffect(() => {
     // Debounced autosave of tabs + activeId. Flushes on visibility-hidden /
     // pagehide so a crash or sudden close still leaves recoverable content.
     const flush = () => { __mdmd_save(r, o); __mdmd_saveHandles(r); };
