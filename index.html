@@ -34,27 +34,56 @@
 
 <script src="app.js"></script>
 <script>
-  // Register service worker for offline-first PWA behavior.
-  // Skipped on file:// (SW only works on http(s)/localhost).
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(err => {
-        console.warn('[mdeditor] SW registration failed:', err);
-      });
-    });
-  }
-  // Tell install.ps1 to shut down its loopback HTTP server the moment Edge
-  // finishes installing the PWA. The PowerShell side polls for this exact
-  // path and exits the listener on receipt, which lets install.cmd close
-  // the console window without the user pressing anything.
-  // sendBeacon is the right tool here — it survives a tab close that the
-  // browser may trigger as part of the install flow.
-  window.addEventListener('appinstalled', () => {
+  // /installed tells install.ps1 to stop its loopback server so install.cmd
+  // closes on its own. sendBeacon survives a tab close during install.
+  function __mdmdBeacon() {
     try {
       if (navigator.sendBeacon) navigator.sendBeacon('/installed');
       else fetch('/installed', { method: 'POST', keepalive: true }).catch(() => {});
     } catch (_) {}
-  });
+  }
+
+  // Register the service worker AND drive the in-place update flow when
+  // install.cmd is re-run against an already-installed PWA.
+  //
+  // Because the origin is a 127.0.0.1 loopback server that only exists while
+  // install.cmd is running, a service-worker update (and the reload below)
+  // can ONLY happen during an intentional install.cmd run — never randomly
+  // during normal offline use.
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    // True => an existing install is being updated; false => first visit.
+    var __wasControlled = !!navigator.serviceWorker.controller;
+    var __reloaded = false;
+
+    // A newer SW calling clients.claim() fires controllerchange on this page.
+    // On an update (was already controlled) reload once so the running window
+    // immediately shows the new build; autosave preserves open tabs.
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (__wasControlled && !__reloaded) {
+        __reloaded = true;
+        __mdmdBeacon();
+        location.reload();
+      }
+    });
+
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').then(reg => {
+        // Force an update check so a bumped sw.js is detected on this visit,
+        // even though index.html itself is served from cache.
+        try { reg.update(); } catch (_) {}
+        // Existing install with no pending update shortly after the check =>
+        // already current; let the installer close.
+        if (__wasControlled) {
+          setTimeout(() => {
+            if (!reg.installing && !reg.waiting) __mdmdBeacon();
+          }, 4000);
+        }
+      }).catch(err => console.warn('[mdeditor] SW registration failed:', err));
+    });
+
+    // Fresh PWA install completed.
+    window.addEventListener('appinstalled', __mdmdBeacon);
+  }
 </script>
 </body>
 </html>

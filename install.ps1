@@ -66,13 +66,20 @@ catch {
 
 $url = "http://127.0.0.1:$Port/index.html"
 Write-Host "MdMd installer running at $url"
-Write-Host "1) Edge will open shortly in a normal tab."
-Write-Host "2) Look at the right end of the address bar for the"
-Write-Host "   install icon (a small monitor with a downward arrow)"
-Write-Host "   and click it -> 'Install'."
-Write-Host "3) Tick 'open .md, .markdown with this app' when prompted."
-Write-Host "4) This window will close automatically once the install completes."
-Write-Host "   If anything goes wrong, you can close it manually (Ctrl+C)."
+Write-Host ""
+Write-Host "FIRST TIME (not installed yet):"
+Write-Host "  1) Edge opens in a normal tab."
+Write-Host "  2) Click the install icon at the right of the address bar -> Install."
+Write-Host "  3) Tick 'open .md, .markdown with this app' when prompted."
+Write-Host ""
+Write-Host "ALREADY INSTALLED:"
+Write-Host "  - A code-only update applies in the background and the app reloads"
+Write-Host "    itself; this window then closes on its own."
+Write-Host "  - If the app's LOOK/FILE-HANDLING changed (manifest update), Edge"
+Write-Host "    keeps the old manifest. To pick it up, uninstall first:"
+Write-Host "      edge://apps  ->  MdMd  ->  Uninstall,  then run install.cmd again."
+Write-Host ""
+Write-Host "This window closes automatically; it also self-closes after a timeout."
 Write-Host ""
 
 # ── Launch Edge as a regular browser tab ──────────────────────────────────────
@@ -89,10 +96,23 @@ if ($edge) {
   Start-Process $url
 }
 
-# ── Serve files until /installed beacon arrives (or user closes window) ──────
+# ── Serve files until /installed beacon arrives, or an absolute timeout ──────
+# The timeout guarantees the console never hangs: an already-current install
+# (no update, no fresh-install event) would otherwise never send /installed.
 $installed = $false
+$deadline = [DateTime]::UtcNow.AddSeconds(120)
 while ($listener.IsListening -and -not $installed) {
-  try { $ctx = $listener.GetContext() } catch { break }
+  $task = $listener.GetContextAsync()
+  while (-not $task.Wait(500)) {
+    if ([DateTime]::UtcNow -gt $deadline) {
+      Write-Host ""
+      Write-Host "Timeout reached. Closing installer." -ForegroundColor Yellow
+      $installed = $true
+      break
+    }
+  }
+  if ($installed) { break }
+  try { $ctx = $task.Result } catch { break }
   try {
     $reqPath = [System.Uri]::UnescapeDataString($ctx.Request.Url.AbsolutePath)
 
