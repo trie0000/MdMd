@@ -185,7 +185,7 @@ function buildScrollMap(r, n, o) {
     if (!l[f].match(/^#{1,6}\s/)) continue;
     const m = o[u++];
     i.push(r.heightAtLine(f, "local"));
-    const S = n.querySelector("#" + m.id);
+    const S = document.getElementById(m.id);
     if (S) {
       const C = S.getBoundingClientRect();
       s.push(n.scrollTop + C.top - c.top);
@@ -486,7 +486,7 @@ function App() {
     const t = I.current, a = T.current, d = M.findIndex((h) => h.id === e);
     if (d !== -1) {
       if (t) {
-        const h = t.querySelector("#" + e);
+        const h = document.getElementById(e);
         if (h) {
           const v = Math.max(0, h.offsetTop - 16);
           Math.abs(t.scrollTop - v) > 0.5 && (R.current.preview = performance.now(), t.scrollTop = v);
